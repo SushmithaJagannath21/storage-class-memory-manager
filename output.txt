@@ -1,0 +1,65 @@
+Output file deletion failed
+SCM Opening
+Truncating existing file
+Storing size =
+0
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+24
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+64
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+69
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+109
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+113
+At address =
+0x600000000003
+------------------------------------------
+SCM Closing
+SCM Closing
+SCM Closing
+SCM Opening
+Loading from file
+Signature values
+170
+187
+204
+Getting size =
+113
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+153
+At address =
+0x600000000003
+------------------------------------------
+Malloc occured
+Storing size =
+155
+At address =
+0x600000000003
+------------------------------------------
+SCM Closing
