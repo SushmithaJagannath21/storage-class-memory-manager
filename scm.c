@@ -6,7 +6,6 @@
  * CS 238P - Operating Systems
  * scm.c
  */
-
 #define _GNU_SOURCE
 #define VIRT_ADDRESS 0x600000000000
 
@@ -39,66 +38,135 @@ struct scm
     char *addr, *size_ptr, *base;
 };
 
-struct scm *scm_open(const char *pathname, int truncate)
+int create_file(const char *pathname)
 {
-    int fd;
-    struct stat file_info;
-    size_t file_length;
-    char *curr_brk;
-    void *map_ptr;
-    struct scm *scm_ptr;
-    uint8_t signature[3] = {0xAA, 0xBB, 0xCC}; /* signature to encode in the start of memory*/
-    uint8_t *uint8_t_ptr;
-    size_t *size_t_ptr;
-
-    /* Create new file on truncate*/
-    if (truncate)
+    FILE *fd;
+    char cmd[200]; /* Make sure it's large enough to hold the entire command */
+    strcpy(cmd, "dd if=/dev/zero bs=4096 count=10000 of=");
+    strcat(cmd, pathname);
+    fd = popen(cmd, "w");
+    if (!fd)
     {
-        /* Delete old output file*/
+        TRACE("Failed pipe open execution!!");
+        return -1;
+    }
+    pclose(fd);
+    return 0;
+}
+
+void print(char *s)
+{
+    FILE *f;
+    f = fopen("output.txt", "a");
+    if (f == NULL)
+    {
+        TRACE("Failed to open file");
+        return;
+    }
+    fprintf(f, "%s\n", s);
+    fclose(f);
+}
+
+void printmem(void *p)
+{
+    FILE *f;
+    f = fopen("output.txt", "a");
+    if (f == NULL)
+    {
+        TRACE("Failed to open file");
+        return;
+    }
+    fprintf(f, "%p\n", p);
+    fclose(f);
+}
+
+size_t get_size(size_t *address)
+{
+    size_t size;
+    char buffer[200];
+    size = *address;
+    snprintf(buffer, sizeof(buffer), "%lu", size);
+    print("Getting size =");
+    print(buffer);
+    print("At address =");
+    printmem((void *)address);
+    print("------------------------------------------");
+    return size;
+}
+
+/* put size into memory on 1st time init or whenever size change has occured*/
+void set_size(size_t *address, size_t size)
+{
+    char buffer[200];
+    *address = size;
+    snprintf(buffer, sizeof(buffer), "%lu", size);
+    print("Storing size =");
+    print(buffer);
+    print("At address =");
+    printmem((void *)address);
+    print("------------------------------------------");
+    return;
+}
+
+int truncate_and_createFile(int truncate, const char *pathname)
+{
+    if (truncate)
+    { /* Delete old output file*/
         if (remove("output.txt") == 0)
         {
-            print("Existing output.txt file deleted successfully");
+            print("The file has been deleted");
         }
         else
         {
-            print("Output file deletion failed");
+            print("Deletion failed");
         }
-        if (-1 == create_file(pathname))
+
+        if (create_file(pathname) < 0)
         {
             TRACE("Failed file creation!!");
-            return NULL;
+            return 0;
         }
     }
-    /* Allocate memory for scm pointer*/
-    scm_ptr = (struct scm *)malloc(sizeof(struct scm));
-    if (!scm_ptr)
+    return 1;
+}
+
+struct scm *structMapping(const char *pathname)
+{
+    int fd_;
+    char *curr_brk;
+    struct scm *scm_ptr;
+    struct stat finfo;
+    /*size_t file_length;*/
+
+    if (!(scm_ptr = (struct scm *)malloc(sizeof(struct scm))))
     {
         TRACE("Failed malloc for SCM struct!!");
         return NULL;
     }
+    memset(scm_ptr, 0, sizeof(struct scm));
     /* Open file*/
-    fd = open(pathname, O_RDWR);
-    if (0 > fd)
+    fd_ = open(pathname, O_RDWR);
+    if (fd_ < 0)
     {
         TRACE("Failed file opening!!");
         FREE(scm_ptr);
         return NULL;
     }
+    scm_ptr->fd = fd_;
     /* Get file statistics*/
-    if (fstat(fd, &file_info) < 0)
+    if (fstat(fd_, &finfo) < 0)
     {
         TRACE("Failed execution fstat!!");
         FREE(scm_ptr);
         return NULL;
     }
-    /* Sanity check for file*/
-    if (0 == S_ISREG(file_info.st_mode))
+    /* Checking if the file is regular file*/
+    if (S_ISREG(finfo.st_mode) == 0)
     {
-        TRACE("Failed sanity check!!");
+        TRACE("Not a regular file!");
         FREE(scm_ptr);
         return NULL;
     }
-    file_length = (size_t)file_info.st_size;
 
     /* Sanity check for virtual memory start address*/
     curr_brk = sbrk(0);
@@ -108,56 +176,74 @@ struct scm *scm_open(const char *pathname, int truncate)
         FREE(scm_ptr);
         return NULL;
     }
+    scm_ptr->length = (size_t)finfo.st_size;
+
+    /*scm_ptr->size = 0;*/
+    return scm_ptr;
+}
+
+int validate_signature(uint8_t *address)
+{
+    uint8_t actual_signature[3] = {0xAA, 0xBB, 0xCC};
+    uint8_t read_signature[3];
+    int i;
+
+    printf("Signature values: ");
+
+    /* Read the signature and print the values */
+    for (i = 0; i < 3; i++)
+    {
+        read_signature[i] = *address++;
+        printf("%d ", read_signature[i]);
+    }
+    printf("\n");
+
+    /*Directly compare the read signature with the expected signature*/
+    return memcmp(actual_signature, read_signature, 3) == 0 ? 0 : -1;
+}
+
+struct scm *scm_open(const char *pathname, int truncate)
+{
+    void *map_ptr;
+    uint8_t signature[3] = {0xAA, 0xBB, 0xCC}; /* signature to encode in the start of memory*/
+    uint8_t *uint8_t_ptr;
+    size_t *size_t_ptr;
+    struct scm *scm_ptr;
+
+    /*If truncate logic is passed*/
+    int filecreation = truncate_and_createFile(truncate, pathname);
+    if (filecreation == 0)
+    {
+        TRACE("File not created");
+        return NULL;
+    }
+
+    scm_ptr = structMapping(pathname);
+    if (!scm_ptr)
+    {
+        TRACE("SCM pointer is not created");
+        return NULL;
+    }
 
     /* mmap file and process virtual memory*/
-    map_ptr = (void *)mmap((void *)VIRT_ADDRESS, file_length, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, fd, 0);
+    map_ptr = (void *)mmap((void *)VIRT_ADDRESS, scm_ptr->length, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_SHARED, scm_ptr->fd, 0);
     if ((map_ptr == MAP_FAILED) || (map_ptr != (void *)VIRT_ADDRESS))
     {
         TRACE("Failed execution mmap!!");
+        close(scm_ptr->fd);
         FREE(scm_ptr);
         return NULL;
     }
     print("SCM Opening");
     /* If truncate, initlize scm attributes as it is a new file */
-    if (!truncate)
+    if (truncate)
     {
-        print("Loading from file");
-        scm_ptr->addr = (char *)map_ptr;
-        scm_ptr->base = (char *)map_ptr;
-        scm_ptr->fd = fd;
-        scm_ptr->length = file_length;
-        scm_ptr->metadata = 0;
-
-        /* validate signature*/
-        uint8_t_ptr = (uint8_t *)scm_ptr->base;
-        if (-1 == validate_signature(uint8_t_ptr))
-        {
-            TRACE("Garbage Values Detected in File");
-            FREE(scm_ptr);
-            return NULL;
-        }
-        uint8_t_ptr += 3;
-        scm_ptr->base = (char *)uint8_t_ptr;
-        scm_ptr->metadata += 3 * (sizeof(uint8_t));
-
-        /* get size from memory*/
-        size_t_ptr = (size_t *)scm_ptr->base;
-        scm_ptr->size_ptr = (char *)size_t_ptr;
-        scm_ptr->size = get_size(size_t_ptr);
-        size_t_ptr += 1;
-        scm_ptr->base = (char *)size_t_ptr;
-        scm_ptr->metadata += 1 * (sizeof(size_t));
-        return scm_ptr;   
-
-    } /* Else validate signature, load size from file, init everything else */
-    else
-    {
-	print("Truncating existing file");
+        print("Truncating existing file");
         scm_ptr->addr = (char *)map_ptr;
         scm_ptr->base = (char *)map_ptr;
         scm_ptr->size = 0;
-        scm_ptr->fd = fd;
-        scm_ptr->length = file_length;
+        /*scm_ptr->fd = fd;*/
+        /*scm_ptr->length = file_length;*/
         scm_ptr->metadata = 0;
 
         /* encode signature(3 bytes) to location and incement pointer */
@@ -176,6 +262,34 @@ struct scm *scm_open(const char *pathname, int truncate)
         scm_ptr->base = (char *)size_t_ptr;
         scm_ptr->metadata += 1 * (sizeof(size_t));
         return scm_ptr;
+    } /* Else validate signature, load size from file, init everything else */
+    else
+    {
+        print("Loading from file");
+        scm_ptr->addr = (char *)map_ptr;
+        scm_ptr->base = (char *)map_ptr;
+        scm_ptr->metadata = 0;
+
+        /* validate signature*/
+        uint8_t_ptr = (uint8_t *)scm_ptr->base;
+        if (-1 == validate_signature(uint8_t_ptr))
+        {
+            TRACE("Garbage Values in File");
+            FREE(scm_ptr);
+            return NULL;
+        }
+        uint8_t_ptr += 3;
+        scm_ptr->base = (char *)uint8_t_ptr;
+        scm_ptr->metadata += 3 * (sizeof(uint8_t));
+
+        /* get size from memory*/
+        size_t_ptr = (size_t *)scm_ptr->base;
+        scm_ptr->size_ptr = (char *)size_t_ptr;
+        scm_ptr->size = get_size(size_t_ptr);
+        size_t_ptr += 1;
+        scm_ptr->base = (char *)size_t_ptr;
+        scm_ptr->metadata += 1 * (sizeof(size_t));
+        return scm_ptr;
     }
 }
 
@@ -186,9 +300,6 @@ void *scm_malloc(struct scm *scm, size_t n)
     print("Malloc occured");
     size = scm->size;
     scm->size += n;
-
-    /* update size*/
-    /* encode size to specified location*/
     size_t_ptr = (size_t *)scm->size_ptr;
     set_size(size_t_ptr, scm->size);
     return (void *)(scm->base + size);
@@ -213,19 +324,19 @@ void scm_close(struct scm *scm)
 {
     print("SCM Closing");
     /* performs msync and munmap*/
-    if (-1 == close(scm->fd))
+    if (close(scm->fd) < 0)
     {
         TRACE("Failed closing file!!");
         FREE(scm);
         return;
     }
-    if (-1 == msync((void *)scm->addr, scm->length, MS_SYNC | MS_INVALIDATE))
+    if (msync((void *)scm->addr, scm->length, MS_SYNC | MS_INVALIDATE) < 0)
     {
         TRACE("Failed msync execution!!");
         FREE(scm);
         return;
     }
-    if (-1 == munmap((void *)scm->addr, scm->length))
+    if (munmap((void *)scm->addr, scm->length) < 0)
     {
         TRACE("Failed munmap execution!!");
         FREE(scm);
@@ -233,14 +344,34 @@ void scm_close(struct scm *scm)
     }
     FREE(scm);
 }
+size_t string_length(const char *str)
+{
+    size_t length = 0;
+
+    /* Iterate through the string using a pointer */
+    while (*str != '\0')
+    {
+        length++;
+        str++; /* Move the pointer to the next character */
+    }
+    return length;
+}
 
 char *scm_strdup(struct scm *scm, const char *s)
 {
     size_t length;
     char *new_string;
-
     length = string_length(s);
     new_string = (char *)scm_malloc(scm, length);
     memcpy(new_string, s, length);
     return new_string;
+}
+
+void scm_free(struct scm *scm, void *p)
+{
+    if ((char *)p < (char *)scm->addr || (char *)p > (char *)scm->addr + scm->length)
+    {
+        perror("out of valid range");
+    }
+    *(short *)((char *)p - sizeof(short) - sizeof(size_t)) = 0;
 }
