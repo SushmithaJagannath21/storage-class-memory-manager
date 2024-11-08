@@ -34,4 +34,6 @@ size_t avl_scm_utilized(const struct avl *avl);
 
 size_t avl_scm_capacity(const struct avl *avl);
 
+int avl_remove(struct avl *avl, const char *s);
+
 #endif /* _AVL_H_ */
